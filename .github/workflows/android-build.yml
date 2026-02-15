@@ -41,13 +41,11 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          git clone --depth 1 "git@github.com:${{ inputs.source_repo }}.git" source
-          cd source
+          git clone --depth 1 "git@github.com:${{ inputs.source_repo }}.git" .
           git fetch --depth 1 origin "${{ inputs.source_ref }}"
           git checkout FETCH_HEAD
 
       - name: Run source-controlled build entrypoint
-        working-directory: source
         shell: bash
         run: |
           set -euo pipefail
@@ -61,6 +59,6 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: ${{ inputs.artifact_name }}
-          path: source/${{ inputs.artifact_path }}
+          path: ${{ inputs.artifact_path }}
           if-no-files-found: error
           retention-days: 1
