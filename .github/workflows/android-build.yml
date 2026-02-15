@@ -20,6 +20,16 @@ on:
         required: true
         default: build/artifacts
         type: string
+      run_ui_tests:
+        description: 'Run emulator UI click/screenshot verification'
+        required: true
+        default: true
+        type: boolean
+      ui_artifact_name:
+        description: 'Artifact name for UI test screenshots/logs'
+        required: true
+        default: floating-workspace-ui-evidence
+        type: string
 
 permissions:
   contents: read
@@ -54,6 +64,40 @@ jobs:
             exit 1
           fi
           ./tools/ci/build.sh
+
+      - name: Run emulator UI verification
+        if: ${{ inputs.run_ui_tests }}
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 34
+          arch: x86_64
+          profile: pixel_6
+          disable-animations: true
+          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim
+          script: |
+            set -euo pipefail
+
+            APK_PATH="$(find build/artifacts -maxdepth 1 -type f -name '*x86_64*-qa-signed.apk' | head -n 1 || true)"
+            if [[ -z "${APK_PATH}" ]]; then
+              echo "x86_64 qa-signed apk not found under build/artifacts" >&2
+              find build/artifacts -maxdepth 2 -type f -print || true
+              exit 1
+            fi
+
+            adb install -r "${APK_PATH}"
+
+            export UI_DUMP_RETRIES=15
+            ./tools/qa/floating_workspace_click_test.sh
+            OUT_DIR="artifacts/floating-workspace/cloud-emulator" ./tools/qa/floating_workspace_visual_capture.sh
+
+      - name: Upload UI verification artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ inputs.ui_artifact_name }}
+          path: artifacts/floating-workspace
+          if-no-files-found: warn
+          retention-days: 1
 
       - name: Upload build artifacts
         uses: actions/upload-artifact@v4
