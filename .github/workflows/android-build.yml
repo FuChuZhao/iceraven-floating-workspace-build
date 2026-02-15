@@ -1,0 +1,66 @@
+name: Public Build Dispatcher
+
+on:
+  workflow_dispatch:
+    inputs:
+      source_repo:
+        description: 'Private source repository via SSH (owner/repo)'
+        required: true
+        type: string
+      source_ref:
+        description: 'Source repo ref/commit to build'
+        required: true
+        type: string
+      artifact_name:
+        description: 'Artifact name to upload'
+        required: true
+        type: string
+      artifact_path:
+        description: 'Relative path to artifact directory in source repo'
+        required: true
+        default: build/artifacts
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Prepare SSH key for private source clone
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p ~/.ssh
+          echo "${{ secrets.SOURCE_REPO_SSH_KEY }}" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          ssh-keyscan github.com >> ~/.ssh/known_hosts
+
+      - name: Clone private source repository
+        shell: bash
+        run: |
+          set -euo pipefail
+          git clone --depth 1 "git@github.com:${{ inputs.source_repo }}.git" source
+          cd source
+          git fetch --depth 1 origin "${{ inputs.source_ref }}"
+          git checkout FETCH_HEAD
+
+      - name: Run source-controlled build entrypoint
+        working-directory: source
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ ! -x tools/ci/build.sh ]]; then
+            echo "tools/ci/build.sh not found or not executable" >&2
+            exit 1
+          fi
+          ./tools/ci/build.sh
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ inputs.artifact_name }}
+          path: source/${{ inputs.artifact_path }}
+          if-no-files-found: error
+          retention-days: 1
