@@ -75,6 +75,8 @@ jobs:
           disable-animations: true
           emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim
           script: |
+            cat >/tmp/run_ui_verification.sh <<'BASH'
+            #!/usr/bin/env bash
             set -euo pipefail
 
             APK_PATH="$(find build/artifacts -maxdepth 1 -type f -name '*x86_64*-qa-signed.apk' | head -n 1 || true)"
@@ -89,6 +91,9 @@ jobs:
             export UI_DUMP_RETRIES=15
             ./tools/qa/floating_workspace_click_test.sh
             OUT_DIR="artifacts/floating-workspace/cloud-emulator" ./tools/qa/floating_workspace_visual_capture.sh
+            BASH
+            chmod +x /tmp/run_ui_verification.sh
+            /tmp/run_ui_verification.sh
 
       - name: Upload UI verification artifacts
         if: always()
