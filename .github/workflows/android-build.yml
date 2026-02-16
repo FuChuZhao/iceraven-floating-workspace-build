@@ -84,32 +84,36 @@ jobs:
               exit 1
             fi
 
+            AAPT_BADGING=""
             APP_PKG=""
+            APP_ACTIVITY=""
             if command -v aapt >/dev/null 2>&1; then
-              APP_PKG="$(aapt dump badging "${APK_PATH}" 2>/dev/null \
-                | sed -n "s/^package: name='\([^']*\)'.*/\1/p" \
-                | head -n 1 || true)"
+              AAPT_BADGING="$(aapt dump badging "${APK_PATH}" 2>/dev/null || true)"
             fi
-            if [[ -z "${APP_PKG}" && -n "${ANDROID_HOME:-}" ]]; then
+            if [[ -z "${AAPT_BADGING}" && -n "${ANDROID_HOME:-}" ]]; then
               AAPT_BIN="$(find "${ANDROID_HOME}/build-tools" -maxdepth 2 -type f -name aapt | sort -V | tail -n 1 || true)"
               if [[ -n "${AAPT_BIN}" ]]; then
-                APP_PKG="$("${AAPT_BIN}" dump badging "${APK_PATH}" 2>/dev/null \
-                  | sed -n "s/^package: name='\([^']*\)'.*/\1/p" \
-                  | head -n 1 || true)"
+                AAPT_BADGING="$("${AAPT_BIN}" dump badging "${APK_PATH}" 2>/dev/null || true)"
               fi
+            fi
+            if [[ -n "${AAPT_BADGING}" ]]; then
+              APP_PKG="$(sed -n "s/^package: name='\([^']*\)'.*/\1/p" <<<"${AAPT_BADGING}" | head -n 1 || true)"
+              APP_ACTIVITY="$(sed -n "s/^launchable-activity: name='\([^']*\)'.*/\1/p" <<<"${AAPT_BADGING}" | head -n 1 || true)"
             fi
             APP_PKG="${APP_PKG:-io.github.forkmaintainers.iceraven}"
             echo "Detected APK package: ${APP_PKG}"
 
             adb install -r "${APK_PATH}"
 
-            APP_ACTIVITY="$(adb shell cmd package resolve-activity --brief \
-              -a android.intent.action.MAIN \
-              -c android.intent.category.LAUNCHER \
-              "${APP_PKG}" 2>/dev/null \
-              | tr -d '\r' \
-              | awk 'NF && $0 ~ /\// { last=$0 } END { sub(/^[^\\/]*\\//, "", last); print last }' || true)"
-            echo "Resolved launcher activity: ${APP_ACTIVITY:-<auto>}"
+            if [[ -z "${APP_ACTIVITY}" ]]; then
+              APP_ACTIVITY="$(adb shell cmd package resolve-activity --brief \
+                -a android.intent.action.MAIN \
+                -c android.intent.category.LAUNCHER \
+                "${APP_PKG}" 2>/dev/null \
+                | tr -d '\r' \
+                | awk 'NF && $0 ~ /\// { last=$0 } END { sub(/^[^\\/]*\\//, "", last); print last }' || true)"
+            fi
+            echo "Detected launcher activity: ${APP_ACTIVITY:-<auto>}"
 
             if ! timeout 20m env \
               APP_PKG="${APP_PKG}" \
