@@ -74,8 +74,82 @@ jobs:
           profile: pixel_6
           disable-animations: true
           emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -memory 3072 -cores 2
-          script: >-
-            bash -lc 'set -euo pipefail; APK_PATH="$(find build/artifacts -maxdepth 1 -type f -name "*x86_64*-qa-signed.apk" | head -n 1 || true)"; if [[ -z "${APK_PATH}" ]]; then echo "x86_64 qa-signed apk not found under build/artifacts" >&2; find build/artifacts -maxdepth 2 -type f -print || true; exit 1; fi; python3 -m http.server 8787 --bind 127.0.0.1 >/tmp/floating_workspace_site.log 2>&1 & SITE_PID=$!; cleanup() { kill "${SITE_PID}" >/dev/null 2>&1 || true; }; trap cleanup EXIT; export TEST_URL="http://10.0.2.2:8787/tools/qa/site/index.html"; adb install -r "${APK_PATH}"; if ! timeout 20m bash -lc "OUT_DIR=artifacts/floating-workspace/cloud-emulator VISUAL_CAPTURE_SCENARIO=core OPEN_TEST_URL_ENABLED=false SETTLE_TIME_SECONDS=2 ACTION_PAUSE_SECONDS=1 ADB_SCREENSHOT_TIMEOUT_SECONDS=25 ADB_SCREENSHOT_RETRIES=2 ADB_UI_DUMP_TIMEOUT_SECONDS=2 ANR_RECOVERY_RETRY_COUNT=2 ANR_RECOVERY_SETTLE_SECONDS=1 ANR_TEXT_TAP_ENABLED=false ANR_EVIDENCE_CAPTURE=false STATE_DUMP_INCLUDE_UI=false ./tools/qa/floating_workspace_visual_capture.sh"; then echo "[WARN] floating workspace visual capture failed or timed out"; fi; if ! timeout 6m bash -lc "ENABLE_DEBUG_SCREENSHOTS=false DEBUG_OUT_DIR=artifacts/floating-workspace/cloud-emulator/click-debug OPEN_TEST_URL_ENABLED=false SETTLE_TIME_SECONDS=2 ACTION_PAUSE_SECONDS=1 ADB_SCREENSHOT_TIMEOUT_SECONDS=12 ADB_SCREENSHOT_RETRIES=1 ADB_UI_DUMP_TIMEOUT_SECONDS=2 ANR_RECOVERY_RETRY_COUNT=2 ANR_RECOVERY_SETTLE_SECONDS=1 ANR_TEXT_TAP_ENABLED=false ANR_EVIDENCE_CAPTURE=false STATE_DUMP_INCLUDE_UI=false ./tools/qa/floating_workspace_click_test.sh"; then echo "[WARN] floating workspace click test failed or timed out"; fi'
+          script: |
+            set -euo pipefail
+
+            APK_PATH="$(find build/artifacts -maxdepth 1 -type f -name "*x86_64*-qa-signed.apk" | head -n 1 || true)"
+            if [[ -z "${APK_PATH}" ]]; then
+              echo "x86_64 qa-signed apk not found under build/artifacts" >&2
+              find build/artifacts -maxdepth 2 -type f -print || true
+              exit 1
+            fi
+
+            APP_PKG=""
+            if command -v aapt >/dev/null 2>&1; then
+              APP_PKG="$(aapt dump badging "${APK_PATH}" 2>/dev/null \
+                | sed -n "s/^package: name='\([^']*\)'.*/\1/p" \
+                | head -n 1 || true)"
+            fi
+            if [[ -z "${APP_PKG}" && -n "${ANDROID_HOME:-}" ]]; then
+              AAPT_BIN="$(find "${ANDROID_HOME}/build-tools" -maxdepth 2 -type f -name aapt | sort -V | tail -n 1 || true)"
+              if [[ -n "${AAPT_BIN}" ]]; then
+                APP_PKG="$("${AAPT_BIN}" dump badging "${APK_PATH}" 2>/dev/null \
+                  | sed -n "s/^package: name='\([^']*\)'.*/\1/p" \
+                  | head -n 1 || true)"
+              fi
+            fi
+            APP_PKG="${APP_PKG:-io.github.forkmaintainers.iceraven}"
+            echo "Detected APK package: ${APP_PKG}"
+
+            adb install -r "${APK_PATH}"
+
+            APP_ACTIVITY="$(adb shell cmd package resolve-activity --brief \
+              -a android.intent.action.MAIN \
+              -c android.intent.category.LAUNCHER \
+              "${APP_PKG}" 2>/dev/null \
+              | tr -d '\r' \
+              | awk 'NF && $0 ~ /\// { last=$0 } END { sub(/^[^\\/]*\\//, "", last); print last }' || true)"
+            echo "Resolved launcher activity: ${APP_ACTIVITY:-<auto>}"
+
+            if ! timeout 20m env \
+              APP_PKG="${APP_PKG}" \
+              APP_ACTIVITY="${APP_ACTIVITY}" \
+              OUT_DIR=artifacts/floating-workspace/cloud-emulator \
+              VISUAL_CAPTURE_SCENARIO=core \
+              OPEN_TEST_URL_ENABLED=false \
+              SETTLE_TIME_SECONDS=2 \
+              ACTION_PAUSE_SECONDS=1 \
+              ADB_SCREENSHOT_TIMEOUT_SECONDS=25 \
+              ADB_SCREENSHOT_RETRIES=2 \
+              ADB_UI_DUMP_TIMEOUT_SECONDS=2 \
+              ANR_RECOVERY_RETRY_COUNT=2 \
+              ANR_RECOVERY_SETTLE_SECONDS=1 \
+              ANR_TEXT_TAP_ENABLED=false \
+              ANR_EVIDENCE_CAPTURE=false \
+              STATE_DUMP_INCLUDE_UI=false \
+              ./tools/qa/floating_workspace_visual_capture.sh; then
+              echo "[WARN] floating workspace visual capture failed or timed out"
+            fi
+
+            if ! timeout 6m env \
+              APP_PKG="${APP_PKG}" \
+              APP_ACTIVITY="${APP_ACTIVITY}" \
+              ENABLE_DEBUG_SCREENSHOTS=false \
+              DEBUG_OUT_DIR=artifacts/floating-workspace/cloud-emulator/click-debug \
+              OPEN_TEST_URL_ENABLED=false \
+              SETTLE_TIME_SECONDS=2 \
+              ACTION_PAUSE_SECONDS=1 \
+              ADB_SCREENSHOT_TIMEOUT_SECONDS=12 \
+              ADB_SCREENSHOT_RETRIES=1 \
+              ADB_UI_DUMP_TIMEOUT_SECONDS=2 \
+              ANR_RECOVERY_RETRY_COUNT=2 \
+              ANR_RECOVERY_SETTLE_SECONDS=1 \
+              ANR_TEXT_TAP_ENABLED=false \
+              ANR_EVIDENCE_CAPTURE=false \
+              STATE_DUMP_INCLUDE_UI=false \
+              ./tools/qa/floating_workspace_click_test.sh; then
+              echo "[WARN] floating workspace click test failed or timed out"
+            fi
 
       - name: Inspect UI verification artifacts
         if: always()
