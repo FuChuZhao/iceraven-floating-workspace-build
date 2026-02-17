@@ -75,6 +75,7 @@ jobs:
           disable-animations: true
           emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -memory 3072 -cores 2
           script: |
+            bash <<'BASH'
             set -euo pipefail
 
             APK_PATH="$(find build/artifacts -maxdepth 1 -type f -name "*x86_64*-qa-signed.apk" | head -n 1 || true)"
@@ -154,6 +155,7 @@ jobs:
               ./tools/qa/floating_workspace_click_test.sh; then
               echo "[WARN] floating workspace click test failed or timed out"
             fi
+            BASH
 
       - name: Inspect UI verification artifacts
         if: always()
