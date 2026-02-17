@@ -67,6 +67,7 @@ jobs:
 
       - name: Run emulator UI verification
         if: ${{ inputs.run_ui_tests }}
+        timeout-minutes: 45
         uses: reactivecircus/android-emulator-runner@v2
         with:
           api-level: 33
@@ -75,7 +76,7 @@ jobs:
           disable-animations: true
           emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -memory 3072 -cores 2
           script: >-
-            bash -lc 'set -euo pipefail; ./tools/qa/cloud_emulator_ui_verify.sh'
+            bash -lc 'set -euo pipefail; timeout 35m ./tools/qa/cloud_emulator_ui_verify.sh'
 
       - name: Inspect UI verification artifacts
         if: always()
