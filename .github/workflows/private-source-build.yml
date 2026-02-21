@@ -1,0 +1,96 @@
+name: private-source-build
+
+on:
+  workflow_dispatch:
+    inputs:
+      source_repo:
+        description: "Private source repo in owner/name format"
+        required: true
+      source_ref:
+        description: "Branch/tag/commit to build from source repo"
+        required: true
+      artifact_name:
+        description: "Uploaded artifact name"
+        required: true
+        default: "codex-cloud-build"
+      build_script:
+        description: "Build entrypoint path inside source repo"
+        required: true
+        default: "tool/ci/build-cloud-artifacts.sh"
+      artifact_dir:
+        description: "Artifact directory path inside source repo workspace"
+        required: true
+        default: "out/cloud-build"
+
+permissions:
+  contents: read
+
+jobs:
+  build_linux:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout public build repo
+        uses: actions/checkout@v5
+
+      - name: Prepare SSH deploy key for private source clone
+        env:
+          SOURCE_REPO_SSH_KEY: ${{ secrets.SOURCE_REPO_SSH_KEY }}
+        run: |
+          set -euo pipefail
+          if [[ -z "${SOURCE_REPO_SSH_KEY}" ]]; then
+            echo "Missing secret SOURCE_REPO_SSH_KEY" >&2
+            exit 1
+          fi
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "${SOURCE_REPO_SSH_KEY}" | tr -d '\r' > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          ssh-keyscan github.com >> ~/.ssh/known_hosts
+          cat >> ~/.ssh/config <<'CFG'
+          Host github.com
+            IdentityFile ~/.ssh/id_ed25519
+            IdentitiesOnly yes
+            StrictHostKeyChecking yes
+          CFG
+
+      - name: Clone private source repo at source_ref
+        run: |
+          set -euo pipefail
+          git clone --no-tags --depth 1 "git@github.com:${{ inputs.source_repo }}.git" source
+          cd source
+          git fetch --depth 1 origin "${{ inputs.source_ref }}"
+          git checkout --detach FETCH_HEAD
+
+      - name: Install Linux native dependencies
+        if: runner.os == 'Linux'
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y \
+            pkg-config \
+            libcap-dev \
+            python3-pip \
+            fonts-dejavu-core \
+            xvfb \
+            openbox \
+            xterm \
+            imagemagick
+
+      - name: Build with source repo entrypoint
+        working-directory: source
+        env:
+          ARTIFACT_NAME: ${{ inputs.artifact_name }}
+          ARTIFACT_DIR: ${{ github.workspace }}/source/${{ inputs.artifact_dir }}
+        run: |
+          set -euo pipefail
+          if [[ ! -x "${{ inputs.build_script }}" ]]; then
+            chmod +x "${{ inputs.build_script }}"
+          fi
+          "${{ inputs.build_script }}"
+
+      - name: Upload artifact (retention 1 day)
+        uses: actions/upload-artifact@v6
+        with:
+          name: ${{ inputs.artifact_name }}
+          path: source/${{ inputs.artifact_dir }}
+          if-no-files-found: error
+          retention-days: 1
