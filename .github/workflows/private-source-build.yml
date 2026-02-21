@@ -70,6 +70,10 @@ jobs:
             libcap-dev \
             python3-pip \
             fonts-dejavu-core \
+            fonts-noto-cjk \
+            fonts-arphic-uming \
+            fonts-arphic-ukai \
+            fonts-droid-fallback \
             xvfb \
             openbox \
             xterm \
